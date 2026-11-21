@@ -1,12 +1,12 @@
 ---
 name: preflight-verification skill 
 
-description: Pre-flight verification for AI-generated code. Stages a proposed change in a throwaway copy, type-checks it, scans it for hallucinated dependencies and dangerous operations, dry-runs it in the safest available sandbox, runs the affected tests plus edge-case inputs, and only then merges it into the real workspace. Use this skill whenever you are about to write or modify TypeScript/JavaScript or Python source files, whenever the user asks to verify, dry-run, sanity-check, or "make sure it actually compiles/runs" before applying code, and whenever generated code failed once and you are tempted to just patch and hope. Use it even for small edits, because plausible-looking code that fails at runtime is the failure this skill exists to catch.
+description: Pre-flight verification code. Stages a proposed change in a throwaway copy, type-checks it, scans it for hallucinated dependencies and dangerous operations, dry-runs it in the safest available sandbox, runs the affected tests plus edge-case inputs, and only then merges it into the real workspace. Use this skill whenever you are about to write or modify TypeScript/JavaScript or Python source files, whenever the user asks to verify, dry-run, sanity-check, or "make sure it actually compiles/runs" before applying code, and whenever generated code failed once and you are tempted to just patch and hope. Use it even for small edits, because plausible-looking code that fails at runtime is the failure this skill exists to catch.
 ---
 
 # Pre-Flight Code Verification & Test Dry-Run
 
-AI-written code often looks right and still fails to compile, imports a package that does not exist, or breaks on `null`. Writing straight into the workspace makes those failures expensive: they land in the user's files before anyone finds out. This skill moves discovery earlier. The change is proven in a disposable copy first, and the real files are only touched after it passes.
+code often looks right and still fails to compile, imports a package that does not exist, or breaks on `null`. Writing straight into the workspace makes those failures expensive: they land in the user's files before anyone finds out. This skill moves discovery earlier. The change is proven in a disposable copy first, and the real files are only touched after it passes.
 
 ## Core rule
 
