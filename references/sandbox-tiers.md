@@ -54,6 +54,8 @@ docker run --rm --name <n> --init --pull never --network none --read-only
 
 Tier B limits damage. It is **not** a security boundary, and the report must not describe it as one.
 
+Tier B refuses to run when `node_modules`, `.venv`, or `venv` in the stage is a symlink to the real project. Re-stage with `stage_workspace.py --copy-deps` or use Tier A. This only protects those dependency directories; Tier B still does not confine filesystem access generally.
+
 **Environment.** Only `PATH`, `LANG`, `LC_ALL`, `LC_CTYPE`, `TZ`, and `TERM` are copied from your shell. `HOME`, `TMPDIR`, `TMP`, `TEMP`, and the XDG directories point into a throwaway scratch directory that is deleted afterwards. Also set: `CI=true`, `NO_COLOR=1`, `PYTHONDONTWRITEBYTECODE=1`, `PYTHONUNBUFFERED=1`, `PYTHONHASHSEED=0`, `PIP_DISABLE_PIP_VERSION_CHECK=1`, `NPM_CONFIG_UPDATE_NOTIFIER=false`. So API keys, tokens, and cloud credentials in your shell never reach the code. `PATH` gets the stage's `node_modules/.bin`, `.venv/bin`, and `venv/bin` in front when they exist.
 
 **Network** (`data.network_block` says which method was used):
