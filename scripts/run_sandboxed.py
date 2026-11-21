@@ -181,6 +181,12 @@ def path_additions(stage):
     return adds
 
 
+def linked_dependencies(stage):
+    """Return dependency directories that are symlinked to the real project."""
+    return [name for name in ("node_modules", ".venv", "venv")
+            if os.path.islink(os.path.join(stage, name))]
+
+
 def parse_extra_env(items):
     extra = {}
     for item in items or []:
@@ -486,6 +492,14 @@ def main():
              {"tier": "C" if status == "skipped" else args.tier,
               "note": "nothing ran: a skipped sandbox stage is NOT a passed stage"})
         return 1 if status == "fail" else 0
+
+    linked = linked_dependencies(stage)
+    if tier == "B" and linked:
+        emit(STAGE, "fail", [finding("error", TOOL,
+             "Tier B refuses linked dependency directories (%s); re-stage with --copy-deps or use Tier A" %
+             ", ".join(linked), code="linked-dependencies")],
+             "Tier B could write through dependency symlinks into the real project", {"tier": tier, "linked": linked})
+        return 1
 
     scratch = tempfile.mkdtemp(prefix="preflight-run-")
     try:

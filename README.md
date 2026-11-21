@@ -25,7 +25,9 @@ All scripts live in `scripts/`, read their inputs from flags, and print JSON of 
 | `run_sandboxed.py --stage <dir> --cmd "<cmd>" [--tier auto\|A\|B] [--timeout 60] [--shell]` | Runs a command against the staged copy in the strongest isolation available; refuses any directory `stage_workspace.py` did not create |
 | `run_tests.py --stage <dir> [--edge-cases off\|warn\|strict]` | Selects the tests that cover the change, runs only those in the sandbox, then probes Python functions with edge-case inputs |
 | `diagnostics.py --report <json> --stage <dir> --attempt N [--previous <json>] [--format prompt]` | Turns failing stage reports into the exact next prompt and says whether to fix, ask the user, stop, or treat it as an environment problem |
-| `merge_stage.py --stage <dir> --verdict VERIFIED\|PARTIAL [--dry-run\|--rollback]` | The only script that writes to the real project. Strict: refuses on drift or tampering, backs up, and can undo |
+| `merge_stage.py --stage <dir> --verdict VERIFIED --sandbox-report <run.json>` | Apply a fully verified change; a passing Tier A report is required |
+| `merge_stage.py --stage <dir> --verdict PARTIAL --sandbox-report <run.json> --acknowledge-partial` | Apply a partial result only after its skipped checks are explained |
+| `merge_stage.py --stage <dir> --dry-run` / `--rollback` | Preview a merge or undo the previous merge |
 
 ## Workflow
 
@@ -62,6 +64,7 @@ Run the code with `run_sandboxed.py --stage <dir> --cmd "<command>"`. It picks t
 
 - **Tier A, Docker:** real isolation. `--network none`, read-only root filesystem, all capabilities dropped, memory/CPU/PID limits, non-root user. Only the stage is writable; linked dependency folders are mounted read-only. The image must already be pulled, because the run stays offline.
 - **Tier B, hardened subprocess:** damage limiting, not a hard boundary. Host API keys and tokens never reach the code (an allow-listed environment, with HOME and TMPDIR pointing at a throwaway directory). A wall-clock timeout, CPU and file-size limits, and a watchdog that kills the whole process group for excess memory or processes. It does not restrict reads or writes outside the stage, so say so in the report, and prefer Tier A for code you do not trust.
+- Tier B refuses linked `node_modules`, `.venv`, or `venv` directories. Re-stage with `--copy-deps` or use Tier A.
 - **Tier C, nothing safe available:** the stage is `skipped`, never passed.
 
 Read these fields of the result, not just `status`:
@@ -103,7 +106,7 @@ Pass `--previous` with the last run's diagnostics output. If the same error come
 
 ### 7. Merge
 
-Run `merge_stage.py --stage <dir> --verdict VERIFIED`. For `PARTIAL`, first tell the user which stages were skipped, then add `--acknowledge-partial`. A `FAILED` verdict is refused.
+Save the JSON output from `run_sandboxed.py` to a file outside the stage, then pass it with `merge_stage.py --sandbox-report <run.json>`. `VERIFIED` requires that report to show a passing Tier A run; Tier B/C and failed/skipped runs can only be `PARTIAL`. For `PARTIAL`, first tell the user which stages were skipped, then add `--acknowledge-partial`. A `FAILED` verdict is refused.
 
 The merge copies only the files in the manifest. It writes nothing, and says why, if a real file changed since staging (re-stage on top of the current version) or a staged file changed after verification (re-stage and re-verify). Originals are backed up next to the stage, each file is replaced atomically, and a failure part-way undoes itself. Use `--dry-run` to preview. `--rollback` undoes a merge, and refuses if the user has edited those files since.
 
@@ -111,7 +114,7 @@ The merge copies only the files in the manifest. It writes nothing, and says why
 
 Report one of these, never a bare "looks good":
 
-- **VERIFIED:** every stage ran and passed.
+- **VERIFIED:** every stage ran and passed, including the sandboxed run in Tier A.
 - **PARTIAL:** passed, but one or more stages were skipped (no tests found, no sandbox tier, tool missing). Name each skipped stage and why.
 - **FAILED:** a stage failed and the retry budget is spent or the user stopped the loop. Include the stage, file, line, and trace.
 

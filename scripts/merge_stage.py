@@ -9,6 +9,7 @@
 What it enforces, and why:
   * Verdict gate: FAILED is refused. PARTIAL needs --acknowledge-partial, a reminder that skipped stages
     must be shown to the user BEFORE merging.
+  * VERIFIED requires a saved, passing Tier A sandbox report; Tier B/C can only be PARTIAL.
   * Only the files listed in the manifest are copied. Anything else a test run created in the stage is ignored.
   * No drift: if a real file changed since staging (the user kept editing), nothing is written. Re-stage instead
     of overwriting someone's newer work.
@@ -106,6 +107,38 @@ def plan_merge(stage, project, manifest):
         actions.append({"path": rel, "action": action, "target": target, "staged": staged,
                         "orig_sha256": orig, "staged_sha256": want})
     return actions, problems
+
+
+def load_sandbox_report(path):
+    """Read the recorded sandbox result used to support a merge verdict."""
+    if not path:
+        return None, None, "--sandbox-report is required for a merge"
+    try:
+        with open(path, encoding="utf-8") as fh:
+            report = json.load(fh)
+    except (OSError, ValueError) as exc:
+        return None, None, "could not read sandbox report: %s" % exc
+    if report.get("stage") != "run_sandboxed" or report.get("status") not in ("pass", "fail", "skipped"):
+        return None, None, "sandbox report must be a run_sandboxed JSON result"
+    tier = (report.get("data") or {}).get("tier")
+    if tier not in ("A", "B", "C"):
+        return None, None, "sandbox report has no valid tier"
+    return tier, report["status"], None
+
+
+def validate_verdict(verdict, sandbox_tier, sandbox_status, acknowledge_partial):
+    """Fail closed when the requested merge verdict is not supported by its sandbox tier."""
+    if verdict is None:
+        return "--verdict is required (VERIFIED or PARTIAL) unless --dry-run"
+    if verdict == "FAILED":
+        return "refusing to merge a FAILED verdict: fix the problems and re-verify first"
+    if sandbox_tier is None:
+        return "a valid --sandbox-report is required for a merge"
+    if verdict == "VERIFIED" and (sandbox_tier != "A" or sandbox_status != "pass"):
+        return "VERIFIED requires a passing Tier A sandbox report; Tier B/C or a failed/skipped run can only be PARTIAL"
+    if verdict == "PARTIAL" and not acknowledge_partial:
+        return "PARTIAL verdict: tell the user which stages were skipped, then re-run with --acknowledge-partial"
+    return None
 
 
 def atomic_copy(src, dst, mode_from=None):
@@ -216,6 +249,7 @@ def main():
     ap.add_argument("--stage", required=True, help="staged workspace created by stage_workspace.py")
     ap.add_argument("--project", help="real project root (default: the one recorded in the manifest; must match if given)")
     ap.add_argument("--verdict", choices=["VERIFIED", "PARTIAL", "FAILED"], help="the verification verdict being acted on")
+    ap.add_argument("--sandbox-report", help="JSON result saved from run_sandboxed.py")
     ap.add_argument("--acknowledge-partial", action="store_true",
                     help="confirm the skipped stages were shown to the user before merging a PARTIAL verdict")
     ap.add_argument("--dry-run", action="store_true", help="validate and show the plan; write nothing")
@@ -245,12 +279,12 @@ def main():
             return fail("project directory not found: " + project, code=2)
 
         if not args.dry_run:
-            if args.verdict is None:
-                return fail("--verdict is required (VERIFIED or PARTIAL) unless --dry-run", code=2)
-            if args.verdict == "FAILED":
-                return fail("refusing to merge a FAILED verdict: fix the problems and re-verify first", code=2)
-            if args.verdict == "PARTIAL" and not args.acknowledge_partial:
-                return fail("PARTIAL verdict: tell the user which stages were skipped, then re-run with --acknowledge-partial", code=2)
+            tier, sandbox_status, report_error = load_sandbox_report(args.sandbox_report)
+            if report_error:
+                return fail(report_error, code=2)
+            verdict_error = validate_verdict(args.verdict, tier, sandbox_status, args.acknowledge_partial)
+            if verdict_error:
+                return fail(verdict_error, code=2)
             if os.path.exists(backup_dir(stage)):
                 return fail("this stage was already merged (%s exists). Use --rollback to undo it, or re-stage." % backup_dir(stage), code=2)
 
